@@ -139,22 +139,35 @@ const Login = () => {
 
               <form onSubmit={showOtpInput ? handleVerifyOTP : handleSendOTP}>
                 {!showOtpInput ? (
-                  <div className="input-group d-flex">
-                    <div className="country-code">
-                      <i
-                        className="fas fa-envelope"
-                        style={{ color: "#367e40" }}
-                      ></i>
-                    </div>
-                    <input
-                      type="email"
-                      className="email-input"
-                      placeholder="Enter email address"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                    />
-                  </div>
+                                 <div className="input-group d-flex align-items-center" style={{ flexWrap: 'nowrap', width: '100%' }}>
+  <div
+    className="country-code d-flex align-items-center justify-content-center"
+    style={{
+      backgroundColor: '#f1f1f1',
+      // padding: '0.5rem',
+      border: '1px solid #ccc',
+      borderRight: 'none',
+      height: '100%',
+      minWidth: '40px'
+    }}
+  >
+    <i className="fas fa-envelope" style={{ color: "#367e40" }}></i>
+  </div>
+  <input
+    type="email"
+    className="email-input"
+    placeholder="Enter email address"
+    value={email}
+    onChange={(e) => setEmail(e.target.value)}
+    required
+    style={{
+      flex: 1,
+      minWidth: 0,
+      border: '1px solid #ccc',
+      padding: '0.5rem'
+    }}
+  />
+</div>
                 ) : (
                   <div className="input-group d-flex">
                     <div className="country-code">
