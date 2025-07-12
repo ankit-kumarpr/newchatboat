@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { jwtDecode } from "jwt-decode";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
-import "./Profile.css";
+import "./profile.css";
 
 const Profile = () => {
   const [profile, setProfile] = useState(null);
