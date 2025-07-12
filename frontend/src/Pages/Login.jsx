@@ -169,8 +169,15 @@ const Login = () => {
   />
 </div>
                 ) : (
-                  <div className="input-group d-flex">
-                    <div className="country-code">
+                  <div className="input-group d-flex"  style={{ flexWrap: 'nowrap', width: '100%' }}>
+                    <div className="country-code d-flex align-items-center justify-content-center" style={{
+      backgroundColor: '#f1f1f1',
+      // padding: '0.5rem',
+      border: '1px solid #ccc',
+      borderRight: 'none',
+      height: '100%',
+      minWidth: '40px'
+    }}>
                       <i className="fas fa-key"></i>
                     </div>
                     <input
@@ -180,6 +187,12 @@ const Login = () => {
                       value={otp}
                       onChange={(e) => setOtp(e.target.value)}
                       required
+                         style={{
+      flex: 1,
+      minWidth: 0,
+      border: '1px solid #ccc',
+      padding: '0.5rem'
+    }}
                     />
                   </div>
                 )}
