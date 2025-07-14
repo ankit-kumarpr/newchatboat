@@ -27,6 +27,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  LinearProgress,
 } from "@mui/material";
 import {
   Send,
@@ -39,6 +40,13 @@ import {
   Mic,
   Call,
   CallEnd,
+  Close,
+  InsertDriveFile,
+  Image,
+  PictureAsPdf,
+  VideoFile,
+  AudioFile,
+  Download,
 } from "@mui/icons-material";
 import { styled } from "@mui/material/styles";
 
@@ -70,6 +78,27 @@ const MessageBubble = styled(Box)(({ theme, own }) => ({
   },
 }));
 
+const FilePreviewContainer = styled(Box)(({ theme, own }) => ({
+  display: 'flex',
+  flexDirection: 'column',
+  gap: theme.spacing(1),
+  marginTop: theme.spacing(1),
+  backgroundColor: own ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.05)',
+  borderRadius: theme.shape.borderRadius,
+  padding: theme.spacing(1),
+}));
+
+const FileItem = styled(Box)(({ theme }) => ({
+  display: 'flex',
+  alignItems: 'center',
+  padding: theme.spacing(1),
+  backgroundColor: 'rgba(255,255,255,0.2)',
+  borderRadius: theme.shape.borderRadius,
+  '&:hover': {
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
+}));
+
 const LiveSession = () => {
   const { roomId } = useParams();
   const accessToken = sessionStorage.getItem("accessToken");
@@ -81,6 +110,9 @@ const LiveSession = () => {
   const [socket, setSocket] = useState(null);
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [groupInfo, setGroupInfo] = useState(null);
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
   // Audio call states
@@ -96,6 +128,31 @@ const LiveSession = () => {
   const userId = decodedToken.id;
   const userName = sessionStorage.getItem("userName");
   const userEmail = sessionStorage.getItem("userEmail");
+
+  const ensureCompleteFileUrls = (files) => {
+    if (!files) return [];
+    return files.map(file => ({
+      ...file,
+      url: file.url?.startsWith('http') ? file.url : `https://chatboat-kpvg.onrender.com${file.url}`,
+      fullUrl: file.fullUrl || `https://chatboat-kpvg.onrender.com${file.url}`
+    }));
+  };
+
+  useEffect(() => {
+    const savedMessages = localStorage.getItem(`chatMessages_${roomId}`);
+    if (savedMessages) {
+      const parsedMessages = JSON.parse(savedMessages);
+      const messagesWithFiles = parsedMessages.map(msg => ({
+        ...msg,
+        files: ensureCompleteFileUrls(msg.files)
+      }));
+      setMessages(messagesWithFiles);
+    }
+  }, [roomId]);
+
+  useEffect(() => {
+    localStorage.setItem(`chatMessages_${roomId}`, JSON.stringify(messages));
+  }, [messages, roomId]);
 
   // Initialize WebRTC
   const setupWebRTC = async () => {
@@ -185,6 +242,7 @@ const LiveSession = () => {
             headers: {
               Authorization: `Bearer ${accessToken}`,
             },
+            params: { includeFiles: true }
           }
         );
 
@@ -196,6 +254,7 @@ const LiveSession = () => {
               name: msg.sender.name,
               email: msg.sender.email,
             },
+            files: ensureCompleteFileUrls(msg.files)
           }));
           setMessages(formattedMessages);
         }
@@ -214,17 +273,16 @@ const LiveSession = () => {
     });
 
     newSocket.on("receiveMessage", (message) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          ...message,
-          sender: {
-            _id: message.sender._id,
-            name: message.sender.name,
-            email: message.sender.email,
-          },
+      const messageWithFiles = {
+        ...message,
+        sender: {
+          _id: message.sender._id,
+          name: message.sender.name,
+          email: message.sender.email,
         },
-      ]);
+        files: ensureCompleteFileUrls(message.files)
+      };
+      setMessages((prev) => [...prev, messageWithFiles]);
     });
 
     newSocket.on("onlineUsers", (users) => {
@@ -264,6 +322,49 @@ const LiveSession = () => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  const handleFileChange = (e) => {
+    const files = Array.from(e.target.files);
+    setSelectedFiles(files);
+  };
+
+  const removeFile = (index) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const uploadFiles = async () => {
+    if (selectedFiles.length === 0) return [];
+
+    const formData = new FormData();
+    selectedFiles.forEach(file => {
+      formData.append('files', file);
+    });
+
+    try {
+      const response = await axios.post(
+        'https://chatboat-kpvg.onrender.com/api/upload',
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            Authorization: `Bearer ${accessToken}`
+          },
+          onUploadProgress: (progressEvent) => {
+            const percentCompleted = Math.round(
+              (progressEvent.loaded * 100) / progressEvent.total
+            );
+            setUploadProgress(percentCompleted);
+          }
+        }
+      );
+      return response.data.files;
+    } catch (error) {
+      console.error("Error uploading files:", error);
+      return [];
+    } finally {
+      setUploadProgress(0);
+    }
+  };
 
   // Handle call initiation
   const startCall = async () => {
@@ -335,18 +436,28 @@ const LiveSession = () => {
     setIsCallActive(false);
   };
 
-  const handleSendMessage = () => {
-    if (newMessage.trim() === "") return;
+  const handleSendMessage = async () => {
+    if (newMessage.trim() === "" && selectedFiles.length === 0) return;
+
+    let uploadedFiles = [];
+    if (selectedFiles.length > 0) {
+      uploadedFiles = await uploadFiles();
+    }
 
     if (socket) {
       socket.emit("sendMessage", {
         sessionId: roomId,
         userId,
         message: newMessage,
+        files: uploadedFiles
       });
     }
 
     setNewMessage("");
+    setSelectedFiles([]);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   const handleKeyPress = (e) => {
@@ -354,6 +465,63 @@ const LiveSession = () => {
       e.preventDefault();
       handleSendMessage();
     }
+  };
+
+  const getFileIcon = (mimeType) => {
+    if (mimeType.startsWith('image/')) return <Image color="primary" />;
+    if (mimeType === 'application/pdf') return <PictureAsPdf color="error" />;
+    if (mimeType.startsWith('video/')) return <VideoFile color="secondary" />;
+    if (mimeType.startsWith('audio/')) return <AudioFile color="success" />;
+    return <InsertDriveFile />;
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const handleDownload = (file) => {
+    const link = document.createElement('a');
+    link.href = file.fullUrl || file.url;
+    link.download = file.originalname;
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const renderFilePreview = (file) => {
+    if (file.mimetype.startsWith('image/')) {
+      const imageUrl = file.fullUrl || file.url;
+      return (
+        <Box sx={{ 
+          maxWidth: '100%', 
+          maxHeight: '200px', 
+          overflow: 'hidden',
+          mb: 1,
+          borderRadius: 1,
+          border: '1px solid #ddd'
+        }}>
+          <img 
+            src={imageUrl}
+            alt={file.originalname}
+            style={{ 
+              width: '100%',
+              height: 'auto',
+              display: 'block'
+            }}
+            onError={(e) => {
+              e.target.onerror = null;
+              e.target.src = 'https://via.placeholder.com/150?text=Image+Not+Available';
+            }}
+          />
+        </Box>
+      );
+    }
+    return null;
   };
 
   const formatTime = (dateString) => {
@@ -384,8 +552,6 @@ const LiveSession = () => {
         display: "flex",
         flexDirection: "column",
         p: 0,
-        background: "red !important",
-        // bgcolor: "background.default",
       }}
     >
       <Paper
@@ -406,8 +572,6 @@ const LiveSession = () => {
             justifyContent: "space-between",
             flexDirection: "column",
           }}
-          // style={{background:"none"}}
-          className="bg-danger"
         >
           <Box
             sx={{
@@ -603,7 +767,7 @@ const LiveSession = () => {
                       {msg.sender._id !== userId && (
                         <Tooltip
                           title={`${msg.sender.name} (${
-                            onlineUsers.includes(msg.sender._id)
+                            onlineUsers.some(u => u._id === msg.sender._id)
                               ? "Online"
                               : "Offline"
                           })`}
@@ -643,9 +807,37 @@ const LiveSession = () => {
                           </Typography>
                         )}
                         <MessageBubble own={msg.sender._id === userId}>
-                          <Typography variant="body1" sx={{ lineHeight: 1.4 }}>
-                            {msg.message}
-                          </Typography>
+                          {msg.message && (
+                            <Typography variant="body1" sx={{ lineHeight: 1.4 }}>
+                              {msg.message}
+                            </Typography>
+                          )}
+                          {msg.files && msg.files.length > 0 && (
+                            <FilePreviewContainer own={msg.sender._id === userId}>
+                              {msg.files.map((file, i) => (
+                                <React.Fragment key={i}>
+                                  {renderFilePreview(file)}
+                                  <FileItem>
+                                    {getFileIcon(file.mimetype)}
+                                    <Box sx={{ ml: 1, flexGrow: 1 }}>
+                                      <Typography variant="body2" noWrap>
+                                        {file.originalname}
+                                      </Typography>
+                                      <Typography variant="caption">
+                                        {formatFileSize(file.size)}
+                                      </Typography>
+                                    </Box>
+                                    <IconButton 
+                                      size="small" 
+                                      onClick={() => handleDownload(file)}
+                                    >
+                                      <Download fontSize="small" />
+                                    </IconButton>
+                                  </FileItem>
+                                </React.Fragment>
+                              ))}
+                            </FilePreviewContainer>
+                          )}
                         </MessageBubble>
                         <Typography
                           variant="caption"
@@ -670,6 +862,44 @@ const LiveSession = () => {
           )}
         </Box>
 
+        {/* Selected files preview */}
+        {selectedFiles.length > 0 && (
+          <Box sx={{ 
+            p: 1, 
+            borderTop: '1px solid', 
+            borderColor: 'divider',
+            maxHeight: 120,
+            overflow: 'auto',
+            backgroundColor: 'background.paper'
+          }}>
+            {uploadProgress > 0 && (
+              <LinearProgress variant="determinate" value={uploadProgress} sx={{ mb: 1 }} />
+            )}
+            {selectedFiles.map((file, index) => (
+              <Box 
+                key={index} 
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  p: 1,
+                  backgroundColor: 'grey.100',
+                  borderRadius: 1,
+                  mb: 1
+                }}
+              >
+                {getFileIcon(file.type)}
+                <Box sx={{ ml: 1, flexGrow: 1 }}>
+                  <Typography variant="body2" noWrap>{file.name}</Typography>
+                  <Typography variant="caption">{formatFileSize(file.size)}</Typography>
+                </Box>
+                <IconButton size="small" onClick={() => removeFile(index)}>
+                  <Close fontSize="small" />
+                </IconButton>
+              </Box>
+            ))}
+          </Box>
+        )}
+
         {/* Input area */}
         <Box
           sx={{
@@ -680,6 +910,16 @@ const LiveSession = () => {
           }}
         >
           <Box display="flex" alignItems="center">
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              multiple
+              style={{ display: 'none' }}
+            />
+            <IconButton onClick={() => fileInputRef.current.click()}>
+              <AttachFile />
+            </IconButton>
             <TextField
               fullWidth
               variant="outlined"
@@ -701,7 +941,7 @@ const LiveSession = () => {
               variant="contained"
               color="primary"
               onClick={handleSendMessage}
-              disabled={!newMessage.trim()}
+              disabled={!newMessage.trim() && selectedFiles.length === 0}
               sx={{
                 minWidth: 48,
                 height: 48,
